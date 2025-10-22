@@ -1,0 +1,48 @@
+# ------------------------------
+# Python specific ignores
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ------------------------------
+# Environment & dependency files
+# ------------------------------
+.env
+.venv/
+venv/
+env/
+Pipfile.lock
+*.sqlite3
+
+# ------------------------------
+# Editor / IDE junk
+# ------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+*.log
+
+# ------------------------------
+# Temporary files
+# ------------------------------
+temp_*
+*.tmp
+*.bak
+*.old
+
+# ------------------------------
+# OS / cache
+# ------------------------------
+Thumbs.db
+__MACOSX/
+.cache/
+.pytest_cache/
