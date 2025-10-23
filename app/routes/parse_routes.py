@@ -1,9 +1,18 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, HTTPException, Body
 from app.services.parse_service import parse_resume
 
 router = APIRouter()
 
 @router.post("/")
-async def parse_resume_endpoint(file: UploadFile = File(...)):
-    result = await parse_resume(file)
-    return {"parsed_data": result}
+async def parse_resume_endpoint(data: dict = Body(...)):
+    """
+    Expects: { "resumeUrl": "<cloudinary_url>" }
+    """
+    try:
+        result = await parse_resume(data)
+        print("Checkpoint - 4")
+        return {"parsed_data": result}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
