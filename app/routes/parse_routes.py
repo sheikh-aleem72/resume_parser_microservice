@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
 from app.services.parse_service import parse_resume
 
+
 router = APIRouter()
 
 @router.post("/")
@@ -10,7 +11,7 @@ async def parse_resume_endpoint(data: dict = Body(...)):
     """
     try:
         result = await parse_resume(data)
-        print("Checkpoint - 4")
+        print("Checkpoint - 4",result)
         return {"parsed_data": result}
     except HTTPException as e:
         raise e
