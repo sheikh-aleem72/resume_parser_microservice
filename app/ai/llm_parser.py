@@ -32,15 +32,19 @@ You must extract the following fields (if available) and return a **valid JSON o
   "education": [
     {{
       "degree": "Degree name",
-      "institute": "College or University",
-      "year": "Year or duration if present"
+      "institution": "College or University",
+      "fieldOfStudy": "Field or branch of study",
+      "description": "Description about degree",
+      "startDate": "Starting date of college",
+      "endDate": "Ending date of college"
     }}
   ],
   "experience": [
     {{
-      "title": "Job title or position",
+      "role": "Job title or position",
       "company": "Company or organization name",
-      "duration": "Duration of employment",
+      "startDate": "Date of joining",
+      "endDate": "Date of resign",
       "description": "Main responsibilities or achievements"
     }}
   ],
@@ -48,11 +52,25 @@ You must extract the following fields (if available) and return a **valid JSON o
   "projects": [
     {{
       "name": "Project name",
-      "description": "What the project was about"
+      "description": "What the project was about",
+      "techStack": "Technologies used in project",
+      "link": "Link of project"
     }}
   ],
-  "certifications": ["list of certifications"],
-  "achievements": ["list of awards, achievements, recognitions"]
+  "certifications": [
+    {{
+      "title": "Title of certificate",
+      "issuer": "Issuer of certificate",
+      "date": "Date of issue",
+      "description": "Description of certificate"
+    }}
+  ],
+  "achievements": [
+    {{
+      "title": "Title of achievement",
+      "description": "Description of achievement"
+    }}
+  ]
 }}
 
 Return only pure JSON, no extra text or commentary.
