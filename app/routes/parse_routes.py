@@ -11,7 +11,6 @@ async def parse_resume_endpoint(data: dict = Body(...)):
     """
     try:
         result = await parse_resume(data)
-        print("Checkpoint - 4",result)
         return {"parsed_data": result}
     except HTTPException as e:
         raise e

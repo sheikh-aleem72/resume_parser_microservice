@@ -1,4 +1,3 @@
-# app/ai/llm_parser.py
 import os
 import json
 import re
@@ -17,68 +16,77 @@ models = client.models.list()   # returns model metadata
 
 def build_resume_prompt(text: str) -> str:
     return f"""
-You are an expert resume parser AI that extracts structured data
-from resumes of any domain — technical, marketing, legal, healthcare, etc.
+You are a professional resume parsing AI. 
+Your ONLY task is to convert the provided resume text into a strictly formatted JSON object.
 
-The resume text is provided below between <<<RESUME>>> tags.
+### Instructions:
+- Read the resume carefully.
+- Identify and extract relevant information only.
+- Always follow the exact JSON structure shown below — DO NOT add, remove, or rename any fields.
+- Every key must be quoted.
+- Every string value must be enclosed in double quotes.
+- Use an empty array [] or empty string "" if data is not found.
+- Do NOT include comments, markdown, or explanations — return pure JSON only.
 
-You must extract the following fields (if available) and return a **valid JSON object**:
+### JSON Structure to Follow:
 {{
-  "name": "Full name of the candidate",
-  "email": "Email address",
-  "phone": "Phone number",
-  "location": "Candidate's location (city, country if present)",
-  "summary": "1-2 line professional summary if found",
+  "name": "",
+  "email": "",
+  "phone": "",
+  "location": "",
+  "summary": "",
   "education": [
     {{
-      "degree": "Degree name",
-      "institution": "College or University",
-      "fieldOfStudy": "Field or branch of study",
-      "description": "Description about degree",
-      "startDate": "Starting date of college",
-      "endDate": "Ending date of college"
+      "degree": "",
+      "institution": "",
+      "fieldOfStudy": "",
+      "description": "",
+      "startDate": "",
+      "endDate": ""
     }}
   ],
   "experience": [
     {{
-      "role": "Job title or position",
-      "company": "Company or organization name",
-      "startDate": "Date of joining",
-      "endDate": "Date of resign",
-      "description": "Main responsibilities or achievements"
+      "role": "",
+      "company": "",
+      "startDate": "",
+      "endDate": "",
+      "description": ""
     }}
   ],
-  "skills": ["list of skills"],
+  "skills": [],
   "projects": [
     {{
-      "name": "Project name",
-      "description": "What the project was about",
-      "techStack": "Technologies used in project",
-      "link": "Link of project"
+      "name": "",
+      "description": "",
+      "techStack": [],
+      "link": ""
     }}
   ],
   "certifications": [
     {{
-      "title": "Title of certificate",
-      "issuer": "Issuer of certificate",
-      "date": "Date of issue",
-      "description": "Description of certificate"
+      "title": "",
+      "issuer": "",
+      "date": "",
+      "description": ""
     }}
   ],
   "achievements": [
     {{
-      "title": "Title of achievement",
-      "description": "Description of achievement"
+      "title": "",
+      "description": ""
     }}
   ]
 }}
 
-Return only pure JSON, no extra text or commentary.
+Return only a valid JSON object that matches the structure above exactly.
 
+### Resume Text
 <<<RESUME>>>
 {text}
 <<<END>>>
 """
+
 
 def _extract_json_from_text(raw: str) -> dict | None:
     """

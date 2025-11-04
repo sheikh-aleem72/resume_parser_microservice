@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from app.routes.parse_routes import router as parse_router
+from app.routes.analyze_routes import router as analyze_router
 
 app = FastAPI(title="AI Resume Parser Service")
 
 app.include_router(parse_router, prefix="/api/parse", tags=["Resume Parsing"])
+app.include_router(analyze_router, prefix="/api/analyze_resume_match",tags=["Resume Analysis"])
 
 @app.get("/")
 def root():
