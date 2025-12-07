@@ -19,10 +19,11 @@ class JSONWorker(Worker):
 
         batch_id = data["batchId"]
         job_description_id = data["jobDescriptionId"]
-        resumes = data["resumes"]
+        resumeId = data["resumeId"]
+        resumeUrl = data["resumeUrl"] # can be null
 
-        print(f"🎯 Processing Batch: {batch_id} | Job: {job_description_id}")
-        print(f"📄 Resumes: {resumes}")
+        print(f"🎯 Processing resume {resumeId} (Batch: {batch_id})")
+        print(f"📄 Resume URL: {resumeUrl}")
 
         # --- your actual processing logic ---
         try:
@@ -42,14 +43,15 @@ class JSONWorker(Worker):
         try:
             res = requests.post(callback_url, json={
                 "batchId": batch_id,
+                "resumeId": resumeId,
                 "status": status,
                 "error": error
             })
 
             if res.status_code == 200:
-                print(f"✅ Callback success for batch {batch_id}\n")
+                print(f"✅ Callback sent successfully for {resumeId}\n")
             else:
-                print(f"⚠ Callback failed {res.status_code}: {res.text}")
+                print(f"⚠ Callback failed: {res.status_code} → {res.text}")
 
         except Exception as e:
             print(f"❌ Callback: {e}")
