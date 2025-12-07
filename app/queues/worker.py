@@ -1,38 +1,65 @@
-import redis
 import json
-import time
-from dotenv import load_dotenv
 import os
-
-load_dotenv()
+import redis
+import requests
+from rq import Worker, Queue, job
+# from app.processor import process_batch  # your real batch logic
 
 redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
-r = redis.from_url(redis_url)
+callback_url = os.getenv("CALLBACK_URL", "http://localhost:5000/api/v1/batch/update")
 
-CHANNEL = "batch-processing"
+conn = redis.from_url(redis_url)
+QUEUE_NAME = "batch-processing"
 
-print(f"🚀 Worker listening on channel: {CHANNEL}")
 
-pubsub = r.pubsub()
-pubsub.subscribe(CHANNEL)
+class JSONWorker(Worker):
+    def execute_job(self, job: job, queue):
+        raw_payload = job.data
+        data = json.loads(raw_payload)
 
-for message in pubsub.listen():
-    if message["type"] != "message":
-        continue
+        batch_id = data["batchId"]
+        job_description_id = data["jobDescriptionId"]
+        resumes = data["resumes"]
 
-    try:
-        data = json.loads(message["data"])
-        batch_id = data.get("batchId")
-        job_id = data.get("jobId")
-        resumes = data.get("resumes", [])
+        print(f"🎯 Processing Batch: {batch_id} | Job: {job_description_id}")
+        print(f"📄 Resumes: {resumes}")
 
-        print(f"🎯 Received batch job: {batch_id} (for job: {job_id})")
+        # --- your actual processing logic ---
+        try:
+            # process_batch(batch_id, job_description_id, resumes)
+            print("🧠 Simulating processing...")
+            # time.sleep(2)
+            
+            status = "completed"
+            error = None
 
-        for resume in resumes:
-            print(f"🧠 Parsing {resume} ...")
-            time.sleep(1)  # simulate processing
+        except Exception as e:
+            status = "failed"
+            error = str(e)
+            print(f"❌ Error: {error}")
 
-        print("✅ Batch processing completed.\n")
+        print("📨 Sending callback to Node...")
+        try:
+            res = requests.post(callback_url, json={
+                "batchId": batch_id,
+                "status": status,
+                "error": error
+            })
 
-    except Exception as e:
-        print("❌ Error processing message:", e)
+            if res.status_code == 200:
+                print(f"✅ Callback success for batch {batch_id}\n")
+            else:
+                print(f"⚠ Callback failed {res.status_code}: {res.text}")
+
+        except Exception as e:
+            print(f"❌ Callback: {e}")
+
+        return True
+
+
+if __name__ == "__main__":
+    print(f"🚀 RQ Worker started. Listening on queue: {QUEUE_NAME}")
+
+    queue = Queue(QUEUE_NAME, connection=conn)
+    worker = JSONWorker([queue], connection=conn)
+    worker.work()
