@@ -3,13 +3,19 @@ import os
 import redis
 import requests
 from rq import Worker, Queue, job
+from pymongo import MongoClient
 # from app.processor import process_batch  # your real batch logic
 
 redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
 callback_url = os.getenv("CALLBACK_URL", "http://localhost:5000/api/v1/batch/update")
+mongo_url = os.getenv("MONGO_URI_PY")
 
 conn = redis.from_url(redis_url)
 QUEUE_NAME = "batch-processing"
+
+mongo = MongoClient(mongo_url)
+db = mongo["resume_screener_dev"]
+batches = db["batches"]
 
 
 class JSONWorker(Worker):
@@ -25,7 +31,23 @@ class JSONWorker(Worker):
         print(f"🎯 Processing resume {resumeId} (Batch: {batch_id})")
         print(f"📄 Resume URL: {resumeUrl}")
 
-        # --- your actual processing logic ---
+        # --------------------------------------------------
+        # STEP 1 — Mark resume as PROCESSING in Mongo
+        # --------------------------------------------------
+        try:
+            result = batches.update_one(
+                {"batchId": batch_id, "resumes.resumeId": resumeId},
+                {"$set": {"resumes.$.status": "processing"}}
+            )
+            print(f"⚙️ Resume {resumeId} marked as processing")
+
+        except Exception as e:
+            print(f"❌ Failed to update processing state for {resumeId}: {str(e)}")
+
+        # --------------------------------------------------
+        # STEP 2 — Process the resume
+        # --------------------------------------------------
+        
         try:
             # process_batch(batch_id, job_description_id, resumes)
             print("🧠 Simulating processing...")
