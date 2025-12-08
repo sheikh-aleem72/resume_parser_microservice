@@ -1,89 +1,175 @@
 import json
 import os
+import time
 import redis
 import requests
 from rq import Worker, Queue, job
 from pymongo import MongoClient
-# from app.processor import process_batch  # your real batch logic
 
-redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
-callback_url = os.getenv("CALLBACK_URL", "http://localhost:5000/api/v1/batch/update")
-mongo_url = os.getenv("MONGO_URI_PY")
+# ------------------------------
+# ENV CONFIG
+# ------------------------------
+REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
+CALLBACK_URL = os.getenv("CALLBACK_URL", "http://localhost:5000/api/v1/batch/update")
+MONGO_URI = os.getenv("MONGO_URI_PY", "mongodb://localhost:27017/resume_screener_dev")
 
-conn = redis.from_url(redis_url)
-QUEUE_NAME = "batch-processing"
+MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+BASE_DELAY = int(os.getenv("BASE_DELAY_SECONDS", "5"))
+RETRY_SET = os.getenv("RETRY_SET_KEY", "rq:retry")
+QUEUE_NAME = os.getenv("RQ_QUEUE", "batch-processing")
 
-mongo = MongoClient(mongo_url)
+# ------------------------------
+# CONNECTIONS
+# ------------------------------
+redis_conn = redis.from_url(REDIS_URL)
+mongo = MongoClient(MONGO_URI)
 db = mongo["resume_screener_dev"]
 batches = db["batches"]
 
+queue = Queue(QUEUE_NAME, connection=redis_conn)
+
 
 class JSONWorker(Worker):
+
     def execute_job(self, job: job, queue):
-        raw_payload = job.data
-        data = json.loads(raw_payload)
+        """Executes a single resume-processing job with retry + safe callbacks."""
+
+        # Load payload
+        data = json.loads(job.data)
 
         batch_id = data["batchId"]
-        job_description_id = data["jobDescriptionId"]
-        resumeId = data["resumeId"]
-        resumeUrl = data["resumeUrl"] # can be null
+        resume_id = data["resumeId"]
+        resume_url = data.get("resumeUrl")
+        job_redis_key = f"rq:job:{job.id}"
 
-        print(f"🎯 Processing resume {resumeId} (Batch: {batch_id})")
-        print(f"📄 Resume URL: {resumeUrl}")
+        print(f"\n🚀 START Job {job.id} | Resume {resume_id} | Batch {batch_id}")
 
-        # --------------------------------------------------
-        # STEP 1 — Mark resume as PROCESSING in Mongo
-        # --------------------------------------------------
+        # ------------------------------
+        # STEP 1 — Update resume status to PROCESSING in Mongo
+        # ------------------------------
         try:
-            result = batches.update_one(
-                {"batchId": batch_id, "resumes.resumeId": resumeId},
+            batches.update_one(
+                {"batchId": batch_id, "resumes.resumeId": resume_id},
                 {"$set": {"resumes.$.status": "processing"}}
             )
-            print(f"⚙️ Resume {resumeId} marked as processing")
+            print(f"⚙️ Mongo update: resume {resume_id} → processing")
 
         except Exception as e:
-            print(f"❌ Failed to update processing state for {resumeId}: {str(e)}")
+            print(f"❌ Failed to set processing state: {e}")
 
-        # --------------------------------------------------
-        # STEP 2 — Process the resume
-        # --------------------------------------------------
-        
+        # ------------------------------
+        # STEP 2 — PROCESS RESUME (core logic)
+        # ------------------------------
         try:
-            # process_batch(batch_id, job_description_id, resumes)
-            print("🧠 Simulating processing...")
-            # time.sleep(2)
-            
-            status = "completed"
-            error = None
+            print(f"📄 Processing URL: {resume_url}")
+            print("🧠 Simulating resume analysis...")
+
+
+            # For testing retry logic
+            if resume_id == "RESUME_OK":
+                processing_status = "completed"
+
+            elif resume_id == "RESUME_FAIL_TWICE":
+                # fail first 2 attempts
+                attempts = int(redis_conn.hget(job_redis_key, "attempts") or 0)
+                if attempts < 2:
+                    raise Exception("Simulated failure for test (2 failures)")
+                processing_status = "completed"
+
+            elif resume_id == "RESUME_ALWAYS_FAIL":
+                raise Exception("Simulated permanent failure")
+
+            else:
+                # your normal logic here
+                processing_status = "completed"
+
+            error_msg = None
+
+            # -------------------------------------------
+            # TODO: place real resume processing logic here
+            # -------------------------------------------
+
+            # processing_status = "completed"
+            # error_msg = None
 
         except Exception as e:
-            status = "failed"
-            error = str(e)
-            print(f"❌ Error: {error}")
+            processing_status = "failed"
+            error_msg = str(e)
+            print(f"❌ Processing error: {error_msg}")
 
-        print("📨 Sending callback to Node...")
+        # ------------------------------
+        # STEP 3 — Handle SUCCESS or RETRY/FAILURE
+        # ------------------------------
+
+        # CASE 1 → Resume processing FAILED
+        if processing_status == "failed":
+            # increase attempts counter
+            attempts = redis_conn.hincrby(job_redis_key, "attempts", 1)
+
+            if attempts <= MAX_RETRIES:
+                # schedule retry using exponential backoff
+                delay = BASE_DELAY * (2 ** (attempts - 1))
+                next_time = int(time.time()) + delay
+
+                redis_conn.zadd(RETRY_SET, {job.id: next_time})
+
+                print(
+                    f"↻ Retry {attempts}/{MAX_RETRIES} scheduled for Job {job.id} "
+                    f"after {delay}s (resume {resume_id})"
+                )
+
+                # DO NOT send callback (resume not done yet)
+                return True
+
+            else:
+                # Max retries reached → mark as permanent failure
+                print(f"✖ Max retries reached for Resume {resume_id}")
+
+                # FINAL failure callback to Node
+                try:
+                    requests.post(CALLBACK_URL, json={
+                        "batchId": batch_id,
+                        "resumeId": resume_id,
+                        "status": "failed",
+                        "error": error_msg
+                    })
+                    print(f"📩 Final FAILED callback sent → resume {resume_id}")
+
+                except Exception as cb_err:
+                    print(f"⚠ Callback sending failed (max retries exhausted): {cb_err}")
+
+                # cleanup redis job data
+                redis_conn.delete(job_redis_key)
+                redis_conn.zrem(RETRY_SET, job.id)
+
+                return True
+
+        # CASE 2 → Resume processing SUCCESS
         try:
-            res = requests.post(callback_url, json={
+            res = requests.post(CALLBACK_URL, json={
                 "batchId": batch_id,
-                "resumeId": resumeId,
-                "status": status,
-                "error": error
+                "resumeId": resume_id,
+                "status": "completed",
+                "error": None
             })
 
             if res.status_code == 200:
-                print(f"✅ Callback sent successfully for {resumeId}\n")
+                print(f"✅ SUCCESS callback sent → resume {resume_id}")
             else:
-                print(f"⚠ Callback failed: {res.status_code} → {res.text}")
+                print(f"⚠ Callback HTTP error: {res.status_code} → {res.text}")
 
-        except Exception as e:
-            print(f"❌ Callback: {e}")
+        except Exception as cb_err:
+            # IMPORTANT: callback failure ❗DO NOT retry processing
+            print(f"⚠ Callback network error (resume completed): {cb_err}")
 
+        # Cleanup Redis job data
+        redis_conn.delete(job_redis_key)
+
+        print(f"🏁 FINISHED Job {job.id}\n")
         return True
 
 
 if __name__ == "__main__":
-    print(f"🚀 RQ Worker started. Listening on queue: {QUEUE_NAME}")
-
-    queue = Queue(QUEUE_NAME, connection=conn)
-    worker = JSONWorker([queue], connection=conn)
+    print(f"👷 Worker started — listening on queue: {QUEUE_NAME}")
+    worker = JSONWorker([queue], connection=redis_conn)
     worker.work()
