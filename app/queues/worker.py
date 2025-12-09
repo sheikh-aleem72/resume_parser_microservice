@@ -41,7 +41,7 @@ class JSONWorker(Worker):
         resume_id = data["resumeId"]
         resume_url = data.get("resumeUrl")
         job_redis_key = f"rq:job:{job.id}"
-
+        print("================================================================")
         print(f"\n🚀 START Job {job.id} | Resume {resume_id} | Batch {batch_id}")
 
         # ------------------------------
@@ -57,6 +57,8 @@ class JSONWorker(Worker):
         except Exception as e:
             print(f"❌ Failed to set processing state: {e}")
 
+        
+
         # ------------------------------
         # STEP 2 — PROCESS RESUME (core logic)
         # ------------------------------
@@ -65,32 +67,12 @@ class JSONWorker(Worker):
             print("🧠 Simulating resume analysis...")
 
 
-            # For testing retry logic
-            if resume_id == "RESUME_OK":
-                processing_status = "completed"
-
-            elif resume_id == "RESUME_FAIL_TWICE":
-                # fail first 2 attempts
-                attempts = int(redis_conn.hget(job_redis_key, "attempts") or 0)
-                if attempts < 2:
-                    raise Exception("Simulated failure for test (2 failures)")
-                processing_status = "completed"
-
-            elif resume_id == "RESUME_ALWAYS_FAIL":
-                raise Exception("Simulated permanent failure")
-
-            else:
-                # your normal logic here
-                processing_status = "completed"
-
-            error_msg = None
-
             # -------------------------------------------
             # TODO: place real resume processing logic here
             # -------------------------------------------
 
-            # processing_status = "completed"
-            # error_msg = None
+            processing_status = "completed"
+            error_msg = None
 
         except Exception as e:
             processing_status = "failed"
@@ -139,7 +121,7 @@ class JSONWorker(Worker):
                     print(f"⚠ Callback sending failed (max retries exhausted): {cb_err}")
 
                 # cleanup redis job data
-                redis_conn.delete(job_redis_key)
+                # redis_conn.delete(job_redis_key)
                 redis_conn.zrem(RETRY_SET, job.id)
 
                 return True
