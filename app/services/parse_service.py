@@ -3,7 +3,7 @@ import requests
 import tempfile
 import os
 
-from app.utils.extractors import (
+from extractors import (
     extract_text_from_pdf,
     extract_text_from_docx,
     extract_email,

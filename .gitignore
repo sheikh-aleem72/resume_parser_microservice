@@ -16,6 +16,7 @@ build/
 # Environment & dependency files
 # ------------------------------
 .env
+.env.*
 .venv/
 venv/
 env/
@@ -46,3 +47,6 @@ Thumbs.db
 __MACOSX/
 .cache/
 .pytest_cache/
+
+
+app/Scripts

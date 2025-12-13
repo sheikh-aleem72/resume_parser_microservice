@@ -4,7 +4,10 @@ import re
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()
+env = os.getenv("ENV", "development")
+load_dotenv(f".env.{env}")
+
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY not set in environment")
