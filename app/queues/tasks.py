@@ -3,6 +3,9 @@ from app.services.file_loader import download_resume
 from app.services.text_extractor import extract_raw_text
 from app.utils.logger import logger
 from app.utils.log_context import set_log_context
+from app.services.normalize import normalize_text
+from app.services.hashing import sha256_hash
+
 
 def process_resume(job_payload):
     """
@@ -32,7 +35,24 @@ def process_resume(job_payload):
         logger.info("Text extraction completed")
 
         if not raw_text.strip():
-            raise Exception("Empty extracted text")
+            raise Exception("Extracted text is empty")
+        
+        logger.info("Normalizing text")
+        normalized_resume_text = normalize_text(raw_text)
+
+        logger.info(
+            f"Normalized resume text length={len(normalized_resume_text)}"
+        )
+
+        # ---- HASHING ----
+        resume_hash = sha256_hash(normalized_resume_text)
+
+        # Job text should already be stored in DB or payload
+        job_text = job_payload.get("jobText", "")
+        normalized_job_text = normalize_text(job_text)
+        job_hash = sha256_hash(normalized_job_text)
+
+        logger.info("Hashes computed successfully")        
 
         # Next steps:
         # normalize → hash → dedup (Phase-3 Step-2,3,4)
