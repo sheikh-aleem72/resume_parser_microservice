@@ -1,0 +1,143 @@
+import os
+from app.services.file_loader import download_resume
+from app.services.text_extractor import extract_raw_text
+from app.utils.logger import logger
+# from app.utils.log_context import set_log_context
+from app.services.normalize import normalize_text
+from app.services.hashing import sha256_hash
+from app.services.dedup import find_duplicate, mark_as_duplicate
+from app.utils.mongo import resume_processings_collection, job_descriptions_collection
+from bson.objectid import ObjectId
+
+def process_resume(job_payload):
+    """
+    Phase 3 - Step 1:
+    Download resume + extract raw text
+    """
+    file_path = None
+
+
+    # logger.info(f"Starting resume processing for {external_resume_id}")
+
+    try:
+        resume_url = job_payload["resumeUrl"]
+        resume_processing_id = job_payload["resumeProcessingId"]
+        external_resume_id = job_payload["externalResumeId"]
+        job_description_id = job_payload["jobDescriptionId"]
+
+        # 1. Download
+        logger.info("Downloading resume\n")
+        file_path, mime = download_resume(resume_url)
+
+        # 2. Extract text
+        logger.info("Extracting text\n")
+        raw_text = extract_raw_text(file_path, mime)
+        
+        logger.info("Text extraction completed\n")
+
+        if not raw_text.strip():
+            raise Exception("Extracted text is empty")
+        
+        # 3. Normalizing text
+        logger.info("Normalizing text\n")
+        normalized_resume_text = normalize_text(raw_text)
+
+        logger.info(
+            f"Normalized resume text length={len(normalized_resume_text)}\n"
+        )
+
+        # 4. ---- HASHING ----
+        resume_hash = sha256_hash(normalized_resume_text)
+
+        # Job text should already be stored in DB or payload
+        bson_job_description_id = ObjectId(job_description_id)
+        job_doc = job_descriptions_collection.find_one(
+            {"_id": bson_job_description_id},
+            {
+                "title": 1,
+                "company": 1,
+                "location": 1,
+                "required_skills": 1,
+                "preferred_skills": 1,
+                "experience_level": 1,
+                "min_experience_years": 1,
+                "description": 1,
+            }
+        )
+
+
+        if not job_doc:
+            raise Exception("Job description not found or empty")
+
+        job_text_parts = [
+            job_doc.get("title", ""),
+            job_doc.get("company", ""),
+            job_doc.get("location", ""),
+            " ".join(job_doc.get("required_skills", [])),
+            " ".join(job_doc.get("preferred_skills", [])),
+            job_doc.get("experience_level", ""),
+            str(job_doc.get("min_experience_years", "")),
+            job_doc.get("description", ""),
+        ]
+
+        
+
+        job_text = " ".join(job_text_parts)
+        normalized_job_text = normalize_text(job_text)
+        job_hash = sha256_hash(normalized_job_text)
+
+        logger.info("Hashes computed successfully\n")  
+
+        # 5. ------------- dedup --------------------
+
+        logger.info("Phase-3 Step-3: Checking for duplicates\n")
+
+        duplicate = find_duplicate(resume_hash, job_hash)
+
+        if duplicate:
+            logger.info(
+                f"Duplicate found. Reusing results from ResumeProcessing={duplicate['_id']}\n"
+            )
+
+            mark_as_duplicate(
+                current_processing_id=resume_processing_id,
+                source_processing_doc=duplicate
+            )
+
+            return {
+                "resumeProcessingId": resume_processing_id,
+                "status": "completed",
+                "result": "cache",
+                "duplicateOf": str(duplicate["_id"])
+            }
+
+        # No duplicate → store hashes and continue pipeline
+        resume_processings_collection.update_one(
+            {"_id": ObjectId(resume_processing_id)},
+            {
+                "$set": {
+                    "resumeHash": resume_hash,
+                    "jobHash": job_hash,
+                }
+            }
+        )
+
+        logger.info("No duplicate found, moving to Phase-4\n")
+
+        # More steps to go
+
+        return {
+            "result": "completed",
+            "resumeProcessingId": resume_processing_id,
+            "isDuplicate": False
+        }           
+
+
+    except Exception as e:
+        logger.exception(f"process_resume failed: {e}\n")
+        raise
+
+    finally:
+        # 🧹 cleanup temp file
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
