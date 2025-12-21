@@ -8,6 +8,12 @@ from app.services.hashing import sha256_hash
 from app.services.dedup import find_duplicate, mark_as_duplicate
 from app.utils.mongo import resume_processings_collection, job_descriptions_collection
 from bson.objectid import ObjectId
+from app.embeddings.text_builder import build_embedding_texts
+from app.embeddings.service import generate_embedding
+from app.embeddings.similarity import cosine_similarity
+from app.embeddings.prefilter import prefilter_resume
+from app.embeddings.ranking import rank_resumes_in_batch
+
 
 def process_resume(job_payload):
     """
@@ -123,6 +129,71 @@ def process_resume(job_payload):
         )
 
         logger.info("No duplicate found, moving to Phase-4\n")
+
+        # ----  Build embedding texts ----
+        logger.info("Embedding starts!")
+        resume_embedding_text, job_embedding_text = build_embedding_texts(
+            normalized_resume_text,
+            normalized_job_text
+        )
+
+        # ----  Generate embeddings ----
+        resume_embedding, model_name = generate_embedding(resume_embedding_text)
+        job_embedding, _ = generate_embedding(job_embedding_text)
+
+
+        resume_processings_collection.update_one(
+            {"_id": ObjectId(resume_processing_id)},
+            {
+                "$set": {
+                    "resumeEmbedding": resume_embedding,
+                    "jobEmbedding": job_embedding,
+                    "embeddingModel": model_name,
+                    "embeddingStatus": "completed",
+                }
+            }
+        )
+
+        logger.info("Phase 4.2 embeddings generated and stored\n")
+
+        # ---- Pre-filtering ----
+        similarity_score = cosine_similarity(
+            resume_embedding,
+            job_embedding
+        )
+
+        prefilter_result = prefilter_resume(
+            similarity_score=similarity_score,
+            normalized_resume_text=normalized_resume_text,
+            required_skills=job_doc.get("required_skills", [])
+        )
+
+        resume_processings_collection.update_one(
+            {"_id": ObjectId(resume_processing_id)},
+            {
+                "$set": {
+                    "preFilter": prefilter_result
+                }
+            }
+        )
+
+        logger.info(
+            f"Phase 4.3 pre-filter completed | "
+            f"passed={prefilter_result['passed']} | "
+            f"similarity={prefilter_result['similarityScore']}\n"
+        )
+
+
+        # --- ranking -------
+        logger.info("Ranking starts")
+        rank_resumes_in_batch(
+            batch_id=job_payload["batchId"],
+            job_description_id=job_description_id,
+            required_skills=job_doc.get("required_skills", []),
+            preferred_skills=job_doc.get("preferred_skills", []),
+        )        
+
+        logger.info("Ranking ends!")
 
         # More steps to go
 
