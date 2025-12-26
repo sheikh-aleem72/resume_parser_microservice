@@ -13,7 +13,11 @@ from app.embeddings.service import generate_embedding
 from app.embeddings.similarity import cosine_similarity
 from app.embeddings.prefilter import prefilter_resume
 from app.embeddings.ranking import rank_resumes_in_batch
-
+from app.embeddings.experience import extract_experience_years,compute_experience_match_ratio
+from app.embeddings.skill_match import compute_skill_match_ratio
+from app.explanation.skills_mapping import build_skill_explanation
+from app.explanation.decision_builder import build_decision_explanation
+from app.explanation.score_breakdown import build_score_breakdown
 
 def process_resume(job_payload):
     """
@@ -183,6 +187,8 @@ def process_resume(job_payload):
             f"similarity={prefilter_result['similarityScore']}\n"
         )
 
+        extracted_experience_years = extract_experience_years(normalized_resume_text)
+
 
         # --- ranking -------
         logger.info("Ranking starts")
@@ -191,9 +197,100 @@ def process_resume(job_payload):
             job_description_id=job_description_id,
             required_skills=job_doc.get("required_skills", []),
             preferred_skills=job_doc.get("preferred_skills", []),
+            min_experience_years=job_doc.get("min_experience_years", 0),
         )        
 
         logger.info("Ranking ends!")
+
+        # --- Explanation ------
+        logger.info("Building explanation!")
+        logger.info("- Building skill explanation...")
+        skills_explanation = build_skill_explanation(
+            required_skills=job_doc["required_skills"],
+            preferred_skills=job_doc.get("preferred_skills", []),
+            normalized_resume_text=normalized_resume_text,)
+        
+
+        resume_processings_collection.update_one(
+            {
+                "_id": ObjectId(resume_processing_id),
+            },
+            {
+                "$set": {
+                    "explanation.skills": skills_explanation
+                }
+            }
+        )
+
+        logger.info("Building decision explanation...")
+        decision_explanation = build_decision_explanation(
+            prefilter=prefilter_result,
+            skills_explanation=skills_explanation,
+            experience_info={
+                "requiredYears": job_doc.get("min_experience_years", 0),
+                "candidateYears": extracted_experience_years,
+                "meetsRequirement": extracted_experience_years
+                >= job_doc.get("min_experience_years", 0),
+            },
+        )
+
+        resume_processings_collection.update_one(
+            {
+                "_id": ObjectId(resume_processing_id),
+            },
+            {
+                "$set": {
+                    "explanation.decision": decision_explanation
+                }
+            }
+        )
+
+
+        if prefilter_result["passed"]:
+            logger.info("Building score breakdown...")
+
+            score_breakdown = build_score_breakdown(
+                semantic_similarity=prefilter_result["similarityScore"],
+                required_skill_ratio=compute_skill_match_ratio(
+                    normalized_resume_text,
+                    job_doc.get("required_skills", [])
+                ),
+                preferred_skill_ratio=compute_skill_match_ratio(
+                    normalized_resume_text,
+                    job_doc.get("preferred_skills", [])
+                ),
+                experience_ratio=compute_experience_match_ratio(
+                    extracted_years=extracted_experience_years,
+                    required_years=job_doc.get("min_experience_years", 0),
+                ),
+            )
+
+            resume_processings_collection.update_one(
+                { "_id": ObjectId(resume_processing_id) },
+                {
+                    "$set": {
+                        "explanation.scoreBreakdown": score_breakdown,
+                        "explanation.experience": {
+                            "requiredYears": job_doc.get("min_experience_years", 0),
+                            "candidateYears": extracted_experience_years,
+                            "meetsRequirement": extracted_experience_years
+                            >= job_doc.get("min_experience_years", 0),
+                        },
+                    }
+                }
+            )
+
+        if not prefilter_result["passed"]:
+            resume_processings_collection.update_one(
+                { "_id": ObjectId(resume_processing_id) },
+                {
+                    "$set": {
+                        "rankingStatus": "skipped"
+                    }
+                }
+            )
+
+
 
         # More steps to go
 
