@@ -2,6 +2,7 @@ from bson import ObjectId
 from app.utils.mongo import resume_processings_collection
 from app.embeddings.scoring import compute_final_score
 from app.embeddings.skill_match import compute_skill_match_ratio
+from app.embeddings.experience import compute_experience_match_ratio
 
 
 def rank_resumes_in_batch(
@@ -9,6 +10,7 @@ def rank_resumes_in_batch(
     job_description_id: str,
     required_skills: list[str],
     preferred_skills: list[str],
+    min_experience_years: float,
 ):
     """
     Phase 4.4 — Rank all PASSED resumes in a batch
@@ -37,6 +39,11 @@ def rank_resumes_in_batch(
             required_skills
         )
 
+        experience_ratio = compute_experience_match_ratio(
+            extracted_years=doc.get("extractedExperienceYears", 0.0),
+            required_years=min_experience_years,
+        )
+
         preferred_ratio = compute_skill_match_ratio(
             doc.get("normalizedResumeText", ""),
             preferred_skills
@@ -46,6 +53,7 @@ def rank_resumes_in_batch(
             semantic_similarity=semantic,
             required_skill_match_ratio=required_ratio,
             preferred_skill_match_ratio=preferred_ratio,
+            experience_match_ratio=experience_ratio,
         )
 
         scored.append((doc["_id"], final_score))
@@ -65,3 +73,5 @@ def rank_resumes_in_batch(
                 }
             }
         )
+
+    

@@ -1,44 +1,66 @@
 import time
 import os
 import redis
+from dotenv import load_dotenv
 
+# -----------------------------
 # ENV CONFIG
+# -----------------------------
+load_dotenv(f".env.{os.getenv('ENV', 'development')}")
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
-RETRY_SET = os.getenv("RETRY_SET_KEY", "rq:retry")
-QUEUE_NAME = os.getenv("RQ_QUEUE", "batch-processing")
 POLL_INTERVAL = float(os.getenv("RETRY_SCHED_POLL_INTERVAL", "1"))  # seconds
 
+# Queue → Retry ZSET mapping
+RETRY_CONFIGS = [
+    {
+        "queue": os.getenv("BATCH_QUEUE_NAME", "batch-processing"),
+        "retry_set": os.getenv("BATCH_RETRY_SET", "rq:retry"),
+    },
+    {
+        "queue": os.getenv("ANALYSIS_QUEUE_NAME", "analysis-processing"),
+        "retry_set": os.getenv("ANALYSIS_RETRY_SET", "rq:analysis-retry"),
+    },
+]
+
+# -----------------------------
 # REDIS CONNECTION
+# -----------------------------
 r = redis.from_url(REDIS_URL)
 
-def move_due_jobs():
-    """Moves jobs whose retry time has arrived back into the main queue."""
+
+def move_due_jobs(queue_name: str, retry_set: str) -> int:
+    """Moves due retry jobs back into their processing queue."""
     now = int(time.time())
 
-    # Get all job IDs with score <= now (retry time reached)
-    job_ids = r.zrangebyscore(RETRY_SET, 0, now)
-
+    job_ids = r.zrangebyscore(retry_set, 0, now)
     if not job_ids:
         return 0
 
-    # Move back to processing queue atomically
     pipeline = r.pipeline()
     for job_id in job_ids:
-        pipeline.lpush(f"rq:queue:{QUEUE_NAME}", job_id)
-        pipeline.zrem(RETRY_SET, job_id)
+        pipeline.lpush(f"rq:queue:{queue_name}", job_id)
+        pipeline.zrem(retry_set, job_id)
     pipeline.execute()
 
-    print(f"↪ Re-queued {len(job_ids)} job(s) at time {now}")
+    print(
+        f"↪ Re-queued {len(job_ids)} job(s) "
+        f"into '{queue_name}' from '{retry_set}' at {now}"
+    )
     return len(job_ids)
 
 
 if __name__ == "__main__":
     print("⏳ Retry Scheduler Started")
-    print(f"Watching ZSET: {RETRY_SET}")
+    for cfg in RETRY_CONFIGS:
+        print(
+            f"Watching retry-set '{cfg['retry_set']}' "
+            f"→ queue '{cfg['queue']}'"
+        )
 
     while True:
         try:
-            move_due_jobs()
+            for cfg in RETRY_CONFIGS:
+                move_due_jobs(cfg["queue"], cfg["retry_set"])
         except Exception as e:
             print(f"⚠ Scheduler error: {e}")
 
