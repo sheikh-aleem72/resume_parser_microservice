@@ -1,6 +1,9 @@
 import os
 import subprocess
 import sys
+from dotenv import load_dotenv
+
+load_dotenv(f".env.{os.getenv('ENV', 'development')}")
 
 WORKER_COUNT = int(os.getenv("PY_WORKER_COUNT", "4"))
 
@@ -14,7 +17,7 @@ processes = []
 
 for i in range(WORKER_COUNT):
     print(f"👷 Launching worker #{i+1}")
-    p = subprocess.Popen([PYTHON_EXECUTABLE, "-m", "app.queues.worker"])
+    p = subprocess.Popen([PYTHON_EXECUTABLE, "-m", "app.queues.batch_worker"])
     processes.append(p)
 
 print("All workers started. Press CTRL+C to terminate.")

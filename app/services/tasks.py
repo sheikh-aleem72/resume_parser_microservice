@@ -128,6 +128,7 @@ def process_resume(job_payload):
                 "$set": {
                     "resumeHash": resume_hash,
                     "jobHash": job_hash,
+                    "normalizedResumeText": normalized_resume_text
                 }
             }
         )

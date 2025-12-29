@@ -4,12 +4,14 @@ import time
 import redis
 import requests
 from rq import Worker, Queue, job
-from pymongo import MongoClient
 from app.services.tasks import process_resume
 from app.utils.log_context import set_log_context
 from app.utils.logger import logger
 from app.utils.mongo import resume_processings_collection
 from bson.objectid import ObjectId
+from dotenv import load_dotenv
+
+load_dotenv(f".env.{os.getenv('ENV', 'development')}")
 # ------------------------------
 # ENV CONFIG
 # ------------------------------
@@ -19,8 +21,8 @@ MONGO_URI = os.getenv("MONGO_URI_PY", "mongodb://localhost:27017/resume_screener
 
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 BASE_DELAY = int(os.getenv("BASE_DELAY_SECONDS", "5"))
-RETRY_SET = os.getenv("RETRY_SET_KEY", "rq:retry")
-QUEUE_NAME = os.getenv("RQ_QUEUE", "batch-processing")
+RETRY_SET = os.getenv("BATCH_RETRY_SET", "rq:retry")
+QUEUE_NAME = os.getenv("BATCH_QUEUE_NAME", "batch-processing")
 
 # ------------------------------
 # CONNECTIONS
@@ -172,7 +174,7 @@ class JSONWorker(Worker):
 
 
 if __name__ == "__main__":
-    logger.info(f"👷 Worker started — queue: {QUEUE_NAME}\n")
+    logger.info(f"👷Batch Worker started — queue: {QUEUE_NAME}\n")
     worker = JSONWorker([queue], connection=redis_conn)
     worker.work()
 
