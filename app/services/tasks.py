@@ -173,12 +173,14 @@ def process_resume(job_payload):
             required_skills=job_doc.get("required_skills", [])
         )
 
+
         resume_processings_collection.update_one(
             {"_id": ObjectId(resume_processing_id)},
             {
-                "$set": {
-                    "preFilter": prefilter_result
-                }
+            "$set": {
+                "preFilter": prefilter_result,
+                "passFail": "passed" if prefilter_result.get("passed") else "failed"
+            }
             }
         )
 
