@@ -1,4 +1,3 @@
-# from app.embeddings.providers.gemini import GeminiEmbeddingProvider
 from app.embeddings.providers.minilm import MiniLMEmbeddingProvider
 
 

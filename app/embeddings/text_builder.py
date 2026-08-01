@@ -1,4 +1,3 @@
-# embeddings/text_builder.py
 
 MAX_WORDS = 1500
 
